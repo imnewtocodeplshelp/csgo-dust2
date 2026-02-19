@@ -3,13 +3,7 @@
   "appName": "Dust2 FPS",
   "webDir": "www",
   "server": {
-    "androidScheme": "https",
-    "cleartext": true,
-    "allowNavigation": ["*"]
-  },
-  "android": {
-    "allowMixedContent": true,
-    "minWebViewVersion": 60,
-    "backgroundColor": "#000000"
+    "url": "https://csgo-browser.onrender.com",
+    "cleartext": true
   }
 }
