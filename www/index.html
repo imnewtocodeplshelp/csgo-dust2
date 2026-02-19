@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dust2 FPS Multiplayer</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; touch-action: none; font-family: monospace; user-select: none; }
+
+        /* ── Connect Screen ── */
+        #connect-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            z-index: 2000; color: #0f0;
+        }
+        #connect-screen h1 { font-size: 36px; margin: 0 0 4px 0; text-shadow: 0 0 20px #0f0; letter-spacing: 4px; }
+        #connect-screen .subtitle { color: #444; font-size: 12px; margin: 0 0 40px 0; letter-spacing: 2px; }
+
+        /* Mode selector buttons */
+        .mode-buttons { display: flex; gap: 16px; margin-bottom: 28px; }
+        .mode-btn {
+            padding: 18px 32px; font-size: 16px; font-family: monospace; font-weight: bold;
+            letter-spacing: 2px; background: transparent; border: 2px solid #333;
+            color: #555; border-radius: 8px; cursor: pointer; transition: all 0.2s;
+            min-width: 130px; text-align: center;
+        }
+        .mode-btn:hover { border-color: #0f0; color: #0f0; }
+        .mode-btn.active { border-color: #0f0; color: #0f0; background: rgba(0,255,0,0.08); box-shadow: 0 0 20px rgba(0,255,0,0.15); }
+        .mode-btn .mode-icon { font-size: 26px; display: block; margin-bottom: 6px; }
+
+        /* Panel */
+        .connect-box {
+            background: rgba(0,255,0,0.05); border: 1px solid rgba(0,255,0,0.25);
+            border-radius: 12px; padding: 28px 36px; width: 320px;
+            box-shadow: 0 0 40px rgba(0,255,0,0.08); transition: all 0.3s;
+        }
+        .connect-box label { display: block; font-size: 11px; color: #0a0; margin-bottom: 8px; letter-spacing: 2px; }
+        .connect-box input {
+            width: 100%; padding: 14px 16px; font-size: 15px; font-family: monospace;
+            background: rgba(0,0,0,0.7); border: 1px solid #0f0; border-radius: 6px;
+            color: #0f0; outline: none; box-sizing: border-box; margin-bottom: 18px;
+        }
+        .connect-box input:focus { box-shadow: 0 0 10px rgba(0,255,0,0.3); }
+        .action-btn {
+            width: 100%; padding: 15px; font-size: 17px; font-family: monospace;
+            font-weight: bold; letter-spacing: 3px; background: transparent;
+            border: 2px solid #0f0; color: #0f0; border-radius: 6px; cursor: pointer; transition: all 0.2s;
+        }
+        .action-btn:hover, .action-btn:active { background: rgba(0,255,0,0.15); }
+        #connect-error { color: #f44; font-size: 12px; margin-top: 12px; min-height: 18px; text-align: center; }
+
+        /* Host info box */
+        .host-info {
+            background: rgba(0,255,0,0.04); border: 1px solid rgba(0,255,0,0.2);
+            border-radius: 8px; padding: 14px 16px; margin-bottom: 18px; font-size: 12px; color: #666; line-height: 1.8;
+        }
+        .host-info .ip-line { color: #0f0; font-size: 15px; font-weight: bold; letter-spacing: 1px; }
+        .host-info code { color: #0a0; font-family: monospace; }
+
+        /* Panel visibility */
+        #host-panel, #join-panel { display: none; }
+        #host-panel.active, #join-panel.active { display: block; }
+
+        /* ── Loading Screen ── */
+        #loading {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; display: none; flex-direction: column;
+            align-items: center; justify-content: center;
+            color: #0f0; font-size: 24px; z-index: 1000; transition: opacity 0.5s;
+        }
+        #loading.active { display: flex; }
+        #loading.hidden { opacity: 0; pointer-events: none; }
+        .spinner {
+            border: 4px solid rgba(0,255,0,0.1); border-top: 4px solid #0f0;
+            border-radius: 50%; width: 60px; height: 60px;
+            animation: spin 1s linear infinite; margin-bottom: 20px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* ── Game UI (hidden until connected) ── */
+        .game-ui { display: none !important; }
+        .game-ui.visible { display: unset !important; }
+        .game-ui-flex { display: none !important; }
+        .game-ui-flex.visible { display: flex !important; }
+
+        #ui { position: absolute; top: 10px; left: 10px; color: #0f0; pointer-events: none; text-shadow: 2px 2px #000; font-size: 14px; z-index: 10; line-height: 1.5; }
+        #health-container { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 10; pointer-events: none; }
+        #health-bar { width: 300px; height: 30px; background: rgba(0,0,0,0.7); border: 3px solid rgba(255,255,255,0.5); border-radius: 5px; overflow: hidden; }
+        #health-fill { height: 100%; background: linear-gradient(to right, #ff0000, #00ff00); transition: width 0.3s; width: 100%; }
+        #health-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: white; font-size: 18px; font-weight: bold; text-shadow: 2px 2px 4px #000; }
+        #kill-feed { position: absolute; top: 10px; right: 10px; z-index: 10; pointer-events: none; text-align: right; }
+        .kill-message { color: #fff; font-size: 14px; background: rgba(0,0,0,0.7); padding: 5px 10px; margin-bottom: 5px; border-radius: 5px; animation: fadeIn 0.3s, fadeOut 0.5s 4.5s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes fadeOut { to { opacity: 0; } }
+        #death-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(139,0,0,0.7); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 500; }
+        #death-screen.show { display: flex; }
+        #death-screen h1 { color: #fff; font-size: 72px; margin: 0; text-shadow: 4px 4px 8px #000; }
+        #death-screen p { color: #fff; font-size: 24px; text-shadow: 2px 2px 4px #000; }
+        #damage-flash { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,0,0,0.3); pointer-events: none; opacity: 0; z-index: 100; transition: opacity 0.1s; }
+        #damage-flash.show { opacity: 1; }
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 24px; height: 24px; transform: translate(-50%,-50%); pointer-events: none; z-index: 8; }
+        #crosshair::before, #crosshair::after { content: ''; position: absolute; background: #0f8; box-shadow: 0 0 5px #0f8; }
+        #crosshair::before { top: 50%; left: -10px; width: 44px; height: 2px; }
+        #crosshair::after { left: 50%; top: -10px; width: 2px; height: 44px; }
+        #crosshair.hit::before, #crosshair.hit::after { background: #f00; box-shadow: 0 0 10px #f00; }
+        .touch-zone { position: absolute; bottom: 0; width: 50%; height: 100%; z-index: 5; }
+        #left-zone { left: 0; } #right-zone { right: 0; }
+        .joystick-base { width: 120px; height: 120px; background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.25); border-radius: 50%; position: absolute; pointer-events: none; display: none; transform: translate(-50%,-50%); }
+        .joystick-base.active { display: block; }
+        .knob { width: 50px; height: 50px; background: rgba(255,255,255,0.5); border: 2px solid rgba(255,255,255,0.8); border-radius: 50%; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); pointer-events: none; box-shadow: 0 0 10px rgba(255,255,255,0.3); }
+        #fire-btn { position: absolute; bottom: 220px; right: 50px; width: 90px; height: 90px; background: rgba(220,40,40,0.45); border: 3px solid rgba(255,255,255,0.5); border-radius: 50%; color: white; font-weight: bold; font-size: 18px; display: flex; align-items: center; justify-content: center; z-index: 15; touch-action: manipulation; }
+        #jump-btn { position: absolute; bottom: 130px; right: 50px; width: 70px; height: 70px; background: rgba(40,140,220,0.45); border: 3px solid rgba(255,255,255,0.5); border-radius: 50%; color: white; font-weight: bold; font-size: 16px; display: flex; align-items: center; justify-content: center; z-index: 15; touch-action: manipulation; }
+        #scoreboard { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); background: rgba(0,0,0,0.9); border: 3px solid rgba(255,255,255,0.5); border-radius: 10px; padding: 20px; color: #fff; display: none; z-index: 600; min-width: 400px; }
+        #scoreboard.show { display: block; }
+        #scoreboard h2 { margin: 0 0 15px 0; text-align: center; }
+        .score-row { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.2); }
+        .score-row.header { font-weight: bold; background: rgba(255,255,255,0.1); }
+    </style>
+</head>
+<body>
+
+    <!-- SERVER CONNECT SCREEN -->
+    <div id="connect-screen">
+        <h1>⚡ DUST 2</h1>
+        <p class="subtitle">CS:GO BROWSER MULTIPLAYER</p>
+
+        <!-- Mode selector -->
+        <div class="mode-buttons">
+            <button class="mode-btn" id="btn-host" onclick="selectMode('host')">
+                <span class="mode-icon">🖥️</span>HOST
+            </button>
+            <button class="mode-btn" id="btn-join" onclick="selectMode('join')">
+                <span class="mode-icon">🎮</span>JOIN
+            </button>
+        </div>
+
+        <!-- Shared box -->
+        <div class="connect-box">
+
+            <!-- HOST PANEL -->
+            <div id="host-panel">
+                <div class="host-info">
+                    <div style="color:#0a0;margin-bottom:8px;letter-spacing:1px;font-size:11px;">YOUR SERVER INFO</div>
+                    <div class="ip-line" id="host-ip-display">Finding your IP...</div>
+                    <div style="margin-top:10px;font-size:11px;">
+                        Port: <code>3000</code> &nbsp;|&nbsp; Share this IP with friends<br><br>
+                        On your PC, run:<br>
+                        <code>node server.js</code>
+                    </div>
+                </div>
+                <label>YOUR SERVER PORT (default 3000)</label>
+                <input type="number" id="host-port" value="3000" autocomplete="off" />
+                <button class="action-btn" onclick="startHost()">▶ START HOSTING</button>
+                <div id="connect-error"></div>
+            </div>
+
+            <!-- JOIN PANEL -->
+            <div id="join-panel">
+                <label>SERVER ADDRESS</label>
+                <input type="text" id="server-url" placeholder="http://192.168.1.x:3000"
+                       autocomplete="off" autocorrect="off" spellcheck="false" />
+                <button class="action-btn" onclick="startGame()">▶ JOIN GAME</button>
+                <div id="connect-error"></div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- LOADING SCREEN -->
+    <div id="loading">
+        <div class="spinner"></div>
+        <div id="loading-text">Connecting...</div>
+    </div>
+
+    <!-- GAME UI (hidden until game starts) -->
+    <div id="ui" style="display:none"></div>
+    <div id="crosshair" style="display:none"></div>
+    <div id="damage-flash" style="display:none"></div>
+    <div id="health-container" style="display:none">
+        <div id="health-bar"><div id="health-fill"></div></div>
+        <div id="health-text">100</div>
+    </div>
+    <div id="kill-feed" style="display:none"></div>
+    <div id="death-screen">
+        <h1>YOU DIED</h1>
+        <p id="death-message">Killed by Player</p>
+        <p>Respawning in <span id="respawn-timer">3</span> seconds...</p>
+    </div>
+    <div id="scoreboard">
+        <h2>SCOREBOARD</h2>
+        <div id="scoreboard-content"></div>
+    </div>
+    <div id="fire-btn" style="display:none">FIRE</div>
+    <div id="jump-btn" style="display:none">JUMP</div>
+    <div id="left-zone" class="touch-zone" style="display:none"></div>
+    <div id="right-zone" class="touch-zone" style="display:none"></div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <!-- CONNECTION LOGIC -->
+    <script>
+        let gameStarted = false;
+
+        function showGameElements() {
+            ['ui','crosshair','damage-flash','health-container','kill-feed',
+             'fire-btn','jump-btn','left-zone','right-zone'].forEach(id => {
+                document.getElementById(id).style.display = '';
+            });
+        }
+
+        // ── Mode selection ──
+        function selectMode(mode) {
+            document.getElementById('host-panel').classList.toggle('active', mode === 'host');
+            document.getElementById('join-panel').classList.toggle('active', mode === 'join');
+            document.getElementById('btn-host').classList.toggle('active', mode === 'host');
+            document.getElementById('btn-join').classList.toggle('active', mode === 'join');
+            document.getElementById('connect-error').textContent = '';
+
+            if (mode === 'host') fetchMyIP();
+        }
+
+        // Try to get local IP to display to the host
+        function fetchMyIP() {
+            const el = document.getElementById('host-ip-display');
+            el.textContent = 'Finding your IP...';
+            // Use WebRTC to discover local IP
+            try {
+                const pc = new RTCPeerConnection({ iceServers: [] });
+                pc.createDataChannel('');
+                pc.createOffer().then(o => pc.setLocalDescription(o));
+                pc.onicecandidate = e => {
+                    if (!e || !e.candidate) return;
+                    const match = e.candidate.candidate.match(/(\d+\.\d+\.\d+\.\d+)/);
+                    if (match && !match[1].startsWith('127.')) {
+                        el.textContent = match[1] + ':3000';
+                        pc.close();
+                    }
+                };
+                setTimeout(() => { if (el.textContent === 'Finding your IP...') el.textContent = 'Check Settings > WiFi for your IP'; }, 3000);
+            } catch(e) {
+                el.textContent = 'Check Settings > WiFi for your IP';
+            }
+        }
+
+        // ── Host mode — connect to localhost ──
+        function startHost() {
+            const port = document.getElementById('host-port').value.trim() || '3000';
+            const serverUrl = 'http://localhost:' + port;
+            connectToServer(serverUrl);
+        }
+
+        // ── Join mode — connect to entered IP ──
+        function startGame() {
+            const raw = document.getElementById('server-url').value.trim();
+            if (!raw) { document.getElementById('connect-error').textContent = 'Please enter a server address.'; return; }
+            const serverUrl = raw.startsWith('http') ? raw : 'http://' + raw;
+            connectToServer(serverUrl);
+        }
+
+        function connectToServer(serverUrl) {
+            if (gameStarted) return;
+            document.getElementById('connect-error').textContent = '';
+            document.getElementById('connect-screen').style.display = 'none';
+            const loading = document.getElementById('loading');
+            loading.classList.add('active');
+            document.getElementById('loading-text').textContent = 'Connecting to server...';
+
+            const script = document.createElement('script');
+            script.src = serverUrl + '/socket.io/socket.io.js';
+            script.onload = () => { window._serverUrl = serverUrl; window._socketLoaded = true; };
+            script.onerror = () => {
+                loading.classList.remove('active');
+                document.getElementById('connect-screen').style.display = 'flex';
+                document.getElementById('connect-error').textContent = 'Could not reach server. Check the address and try again.';
+            };
+            document.head.appendChild(script);
+        }
+
+        // Default to Join mode on load
+        document.addEventListener('DOMContentLoaded', () => {
+            selectMode('join');
+            document.getElementById('server-url').addEventListener('keydown', e => { if (e.key === 'Enter') startGame(); });
+            document.getElementById('host-port').addEventListener('keydown', e => { if (e.key === 'Enter') startHost(); });
+        });
+    </script>
+
+    <!-- GAME MODULE -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        // Poll until socket.io script has loaded, then boot game
+        function waitForSocket() {
+            if (window._socketLoaded) {
+                bootGame(window._serverUrl);
+            } else {
+                setTimeout(waitForSocket, 100);
+            }
+        }
+        waitForSocket();
+
+        async function bootGame(serverUrl) {
+            document.getElementById('loading-text').textContent = 'Loading map...';
+
+            const CONFIG = {
+                PLAYER: { HEIGHT: 1.8, RADIUS: 0.4, MOVE_SPEED: 0.15, JUMP_VELOCITY: 0.25, GRAVITY: 0.015 },
+                BULLET: { SPEED: 1.5, RADIUS: 0.08, COLOR: 0xffff00, COLOR_OTHER: 0xff4444 },
+                CAMERA: { FOV: 75, NEAR: 0.1, FAR: 1000 },
+                NETWORK: { UPDATE_INTERVAL: 50 },
+                CONTROLS: { MOUSE_SENSITIVITY: 0.002, JOYSTICK_MOVE_MULTIPLIER: 1.5, JOYSTICK_LOOK_SPEED_X: 0.05, JOYSTICK_LOOK_SPEED_Y: 0.04 },
+                MAP: { DESIRED_SIZE: 300, Y_OFFSET: -1 }
+            };
+
+            const socket = io(serverUrl);
+            let myId = null;
+
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB);
+            scene.fog = new THREE.Fog(0x87CEEB, 50, 300);
+
+            const camera = new THREE.PerspectiveCamera(CONFIG.CAMERA.FOV, window.innerWidth / window.innerHeight, CONFIG.CAMERA.NEAR, CONFIG.CAMERA.FAR);
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+            const sun = new THREE.DirectionalLight(0xffddaa, 1);
+            sun.position.set(50, 100, 50); sun.castShadow = true;
+            sun.shadow.mapSize.width = 2048; sun.shadow.mapSize.height = 2048;
+            scene.add(sun);
+
+            const collidableObjects = [], bullets = {}, otherPlayers = {};
+            let yaw = 0, pitch = 0, velocityY = 0, canJump = false;
+            let myHealth = 100, isAlive = true, playerStats = {}, lastEmit = 0;
+            const stats = { fps: 0, frameCount: 0, lastTime: Date.now() };
+
+            // UI helpers
+            function updateHealthBar(h) {
+                myHealth = Math.max(0, Math.min(100, h));
+                document.getElementById('health-fill').style.width = myHealth + '%';
+                document.getElementById('health-text').textContent = Math.round(myHealth);
+                const fill = document.getElementById('health-fill');
+                if (myHealth > 66) fill.style.background = 'linear-gradient(to right, #44ff44, #00ff00)';
+                else if (myHealth > 33) fill.style.background = 'linear-gradient(to right, #ffaa00, #ffff00)';
+                else fill.style.background = 'linear-gradient(to right, #ff0000, #ff4444)';
+            }
+            function showDamageFlash() {
+                const flash = document.getElementById('damage-flash');
+                flash.classList.add('show'); setTimeout(() => flash.classList.remove('show'), 100);
+                const ch = document.getElementById('crosshair');
+                ch.classList.add('hit'); setTimeout(() => ch.classList.remove('hit'), 200);
+            }
+            function addKillFeedMessage(msg) {
+                const feed = document.getElementById('kill-feed');
+                const el = document.createElement('div'); el.className = 'kill-message'; el.textContent = msg;
+                feed.appendChild(el); setTimeout(() => el.remove(), 5000);
+            }
+            function showDeathScreen(killer) {
+                document.getElementById('death-message').textContent = 'Killed by ' + killer;
+                document.getElementById('death-screen').classList.add('show');
+                let c = 3; const t = document.getElementById('respawn-timer');
+                const iv = setInterval(() => { c--; t.textContent = c; if (c <= 0) clearInterval(iv); }, 1000);
+            }
+            function hideDeathScreen() { document.getElementById('death-screen').classList.remove('show'); }
+
+            // Map
+            async function loadMap() {
+                const loader = new GLTFLoader();
+                try {
+                    const gltf = await loader.loadAsync('./de_dust2_-_cs_map.glb');
+                    const map = gltf.scene;
+                    const box = new THREE.Box3().setFromObject(map);
+                    const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
+                    const sf = CONFIG.MAP.DESIRED_SIZE / Math.max(size.x, size.y, size.z);
+                    map.scale.multiplyScalar(sf); map.position.sub(center.multiplyScalar(sf)); map.position.y += CONFIG.MAP.Y_OFFSET;
+                    map.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; collidableObjects.push(c); } });
+                    scene.add(map); camera.position.set(0, 20, 0);
+                    setTimeout(() => { document.getElementById('loading').classList.add('hidden'); showGameElements(); }, 500);
+                } catch (err) {
+                    const floor = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), new THREE.MeshStandardMaterial({ color: 0x666666 }));
+                    floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor); collidableObjects.push(floor);
+                    setTimeout(() => { document.getElementById('loading').classList.add('hidden'); showGameElements(); }, 1000);
+                }
+            }
+
+            // Joysticks
+            const sticks = { move: { x:0,y:0,id:null,originX:0,originY:0 }, look: { x:0,y:0,id:null,originX:0,originY:0 } };
+            function setupJoystick(zoneId, key) {
+                const zone = document.getElementById(zoneId);
+                const base = document.createElement('div'); base.className = 'joystick-base';
+                const knob = document.createElement('div'); knob.className = 'knob';
+                base.appendChild(knob); zone.appendChild(base);
+                zone.addEventListener('touchstart', e => {
+                    e.preventDefault();
+                    for (const t of e.changedTouches) if (sticks[key].id === null) {
+                        sticks[key].id = t.identifier; sticks[key].originX = t.clientX; sticks[key].originY = t.clientY;
+                        const r = zone.getBoundingClientRect();
+                        base.style.left = (t.clientX - r.left) + 'px'; base.style.top = (t.clientY - r.top) + 'px';
+                        base.classList.add('active');
+                    }
+                }, { passive: false });
+                zone.addEventListener('touchmove', e => {
+                    e.preventDefault();
+                    for (const t of e.changedTouches) if (t.identifier === sticks[key].id) {
+                        const maxDist = 50, dx = t.clientX - sticks[key].originX, dy = t.clientY - sticks[key].originY;
+                        const dist = Math.min(maxDist, Math.hypot(dx, dy)), angle = Math.atan2(dy, dx);
+                        sticks[key].x = Math.cos(angle) * dist / maxDist; sticks[key].y = Math.sin(angle) * dist / maxDist;
+                        knob.style.transform = `translate(calc(-50% + ${Math.cos(angle)*dist}px), calc(-50% + ${Math.sin(angle)*dist}px))`;
+                    }
+                }, { passive: false });
+                const reset = e => { e.preventDefault(); for (const t of e.changedTouches) if (t.identifier === sticks[key].id) { sticks[key].id=null; sticks[key].x=0; sticks[key].y=0; base.classList.remove('active'); knob.style.transform='translate(-50%,-50%)'; } };
+                zone.addEventListener('touchend', reset, { passive: false });
+                zone.addEventListener('touchcancel', () => { sticks[key].id=null; sticks[key].x=0; sticks[key].y=0; base.classList.remove('active'); knob.style.transform='translate(-50%,-50%)'; });
+            }
+            setupJoystick('left-zone', 'move');
+            setupJoystick('right-zone', 'look');
+
+            // Input
+            function fireBullet() {
+                if (!isAlive) return;
+                socket.emit('fireBullet', { pos: camera.position.clone(), dir: new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion) });
+            }
+            const keys = {};
+            document.addEventListener('keydown', e => { keys[e.code]=true; if (e.code==='Tab') { e.preventDefault(); document.getElementById('scoreboard').classList.add('show'); } });
+            document.addEventListener('keyup', e => { keys[e.code]=false; if (e.code==='Tab') document.getElementById('scoreboard').classList.remove('show'); });
+            document.addEventListener('click', () => { if (document.pointerLockElement) fireBullet(); else document.body.requestPointerLock(); });
+            document.addEventListener('mousemove', e => { if (document.pointerLockElement) { yaw -= e.movementX * CONFIG.CONTROLS.MOUSE_SENSITIVITY; pitch = THREE.MathUtils.clamp(pitch - e.movementY * CONFIG.CONTROLS.MOUSE_SENSITIVITY, -1.4, 1.4); } });
+            document.getElementById('fire-btn').addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); fireBullet(); });
+            document.getElementById('jump-btn').addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); if (canJump && isAlive) { velocityY = CONFIG.PLAYER.JUMP_VELOCITY; canJump = false; } });
+
+            // Collision
+            const raycaster = new THREE.Raycaster();
+            function checkGround() {
+                raycaster.set(camera.position, new THREE.Vector3(0,-1,0)); raycaster.far = CONFIG.PLAYER.HEIGHT + 1;
+                const hits = raycaster.intersectObjects(collidableObjects, true);
+                if (hits.length > 0) { const hy = hits[0].point.y; if (camera.position.y - hy <= CONFIG.PLAYER.HEIGHT + 0.1) { camera.position.y = hy + CONFIG.PLAYER.HEIGHT; velocityY = 0; canJump = true; return true; } }
+                return false;
+            }
+            function checkWall(dir, dist) { raycaster.set(camera.position, dir); raycaster.far = dist; return raycaster.intersectObjects(collidableObjects, true).length > 0; }
+
+            // Game loop
+            let lastFrameTime = 0;
+            function animate(ts) {
+                requestAnimationFrame(animate);
+                if (ts - lastFrameTime < 16) return; lastFrameTime = ts;
+                stats.frameCount++;
+                const now = Date.now();
+                if (now - stats.lastTime >= 1000) {
+                    stats.fps = stats.frameCount; stats.frameCount = 0; stats.lastTime = now;
+                    document.getElementById('ui').innerHTML = `FPS: ${stats.fps} | HP: ${myHealth} | Players: ${Object.keys(otherPlayers).length+1}<br>K/D: ${playerStats[myId]?.kills||0} / ${playerStats[myId]?.deaths||0}<br>TAB = scoreboard`;
+                }
+                if (!isAlive) { renderer.render(scene, camera); return; }
+                yaw -= sticks.look.x * CONFIG.CONTROLS.JOYSTICK_LOOK_SPEED_X;
+                pitch = THREE.MathUtils.clamp(pitch - sticks.look.y * CONFIG.CONTROLS.JOYSTICK_LOOK_SPEED_Y, -1.4, 1.4);
+                camera.rotation.set(pitch, yaw, 0, 'YXZ');
+                const md = new THREE.Vector3();
+                if (keys['KeyW']) md.z -= 1; if (keys['KeyS']) md.z += 1;
+                if (keys['KeyA']) md.x -= 1; if (keys['KeyD']) md.x += 1;
+                md.x += sticks.move.x * CONFIG.CONTROLS.JOYSTICK_MOVE_MULTIPLIER;
+                md.z += sticks.move.y * CONFIG.CONTROLS.JOYSTICK_MOVE_MULTIPLIER;
+                if (md.length() > 0) {
+                    md.normalize().applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
+                    if (!checkWall(md, CONFIG.PLAYER.MOVE_SPEED + CONFIG.PLAYER.RADIUS))
+                        camera.position.add(md.multiplyScalar(CONFIG.PLAYER.MOVE_SPEED));
+                }
+                velocityY -= CONFIG.PLAYER.GRAVITY; camera.position.y += velocityY; checkGround();
+                if (keys['Space'] && canJump) { velocityY = CONFIG.PLAYER.JUMP_VELOCITY; canJump = false; }
+                if (now - lastEmit > CONFIG.NETWORK.UPDATE_INTERVAL) {
+                    socket.emit('playerMovement', { x: camera.position.x, y: camera.position.y, z: camera.position.z, ry: yaw });
+                    lastEmit = now;
+                }
+                renderer.render(scene, camera);
+            }
+
+            // Player / bullet models
+            function createPlayerModel() {
+                const g = new THREE.Group();
+                const body = new THREE.Mesh(new THREE.CapsuleGeometry(CONFIG.PLAYER.RADIUS, 1.4), new THREE.MeshStandardMaterial({ color: 0x00ff88, roughness: 0.7, metalness: 0.3 }));
+                body.position.y = 0.7; body.castShadow = true; g.add(body);
+                const head = new THREE.Mesh(new THREE.SphereGeometry(0.25), new THREE.MeshStandardMaterial({ color: 0xffaa00, emissive: 0xffaa00, emissiveIntensity: 0.3 }));
+                head.position.y = 1.5; head.castShadow = true; g.add(head);
+                scene.add(g); return g;
+            }
+            function createBullet(bd, isOther) {
+                const b = new THREE.Mesh(new THREE.SphereGeometry(CONFIG.BULLET.RADIUS), new THREE.MeshBasicMaterial({ color: isOther ? CONFIG.BULLET.COLOR_OTHER : CONFIG.BULLET.COLOR }));
+                b.position.copy(bd.pos); scene.add(b); return b;
+            }
+
+            // Socket events
+            socket.on('init', data => {
+                myId = data.id;
+                Object.keys(data.players).forEach(id => { if (id !== myId && !otherPlayers[id]) { otherPlayers[id] = createPlayerModel(); playerStats[id] = data.players[id]; } });
+                data.bullets.forEach(bd => { if (!bullets[bd.id]) bullets[bd.id] = createBullet(bd, bd.ownerId !== myId); });
+            });
+            socket.on('newPlayer', d => { if (d.id !== myId && !otherPlayers[d.id]) { otherPlayers[d.id] = createPlayerModel(); playerStats[d.id] = { kills: d.kills||0, deaths: d.deaths||0 }; } });
+            socket.on('playerMoved', d => { if (otherPlayers[d.id]) { otherPlayers[d.id].position.set(d.x, d.y - CONFIG.PLAYER.HEIGHT, d.z); otherPlayers[d.id].rotation.y = d.ry; } });
+            socket.on('playerDisconnected', id => { if (otherPlayers[id]) { scene.remove(otherPlayers[id]); delete otherPlayers[id]; delete playerStats[id]; } });
+            socket.on('spawnBullet', bd => { if (!bullets[bd.id]) bullets[bd.id] = createBullet(bd, bd.ownerId !== myId); });
+            socket.on('bulletsUpdate', arr => { arr.forEach(d => { if (bullets[d.id]) bullets[d.id].position.copy(d.pos); }); });
+            socket.on('removeBullet', id => { if (bullets[id]) { scene.remove(bullets[id]); delete bullets[id]; } });
+            socket.on('healthUpdate', d => { if (d.id === myId) { updateHealthBar(d.health); showDamageFlash(); } });
+            socket.on('playerDied', data => {
+                if (data.id === myId) { isAlive = false; showDeathScreen(data.killerId === myId ? 'yourself' : data.killerId.substring(0,8)); }
+                addKillFeedMessage(`${data.killerId.substring(0,8)} eliminated ${data.id === myId ? 'You' : data.id.substring(0,8)}`);
+                if (playerStats[data.killerId]) playerStats[data.killerId].kills = data.killerKills || 0;
+                if (playerStats[data.id]) playerStats[data.id].deaths = (playerStats[data.id].deaths||0) + 1;
+            });
+            socket.on('playerRespawn', data => {
+                if (data.id === myId) { isAlive = true; updateHealthBar(100); hideDeathScreen(); camera.position.set(data.x, data.y, data.z); velocityY = 0; }
+                playerStats[data.id] = { kills: data.kills||0, deaths: data.deaths||0 };
+            });
+            socket.on('forcePosition', pos => { camera.position.set(pos.x, pos.y, pos.z); });
+            socket.on('connect', () => console.log('Connected'));
+            socket.on('disconnect', () => console.log('Disconnected'));
+
+            await loadMap();
+            animate(0);
+            window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+        }
+    </script>
+</body>
+</html>
